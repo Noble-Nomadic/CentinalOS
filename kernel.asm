@@ -1,76 +1,78 @@
 [org 0x0000]              ; Kernel is loaded at physical address 0x0000
 
-%define ENDL 0x0D, 0x0A
+%define ENDL 0x0D, 0x0A    ; Define newline characters for printing
 
 ;-----------------------------------------
 ; Entry Point
 ;-----------------------------------------
 start:
-    jmp main              ; Jump to main code
+    jmp main              ; Jump to main kernel code
 
 ;-----------------------------------------
 ; puts: Print string pointed to by DS:SI
 ;-----------------------------------------
 puts:
-    push si              ; Save SI (pointer to string)
-    push ax              ; Save AX (will be used for printing)
+    push si               ; Save SI (pointer to string)
+    push ax               ; Save AX (used for printing)
+
 .print_loop:
-    lodsb                ; Load byte from DS:SI into AL and increment SI
-    test al, al          ; Check for null terminator
-    jz .done             ; Stop if null is found
-    mov ah, 0x0E         ; BIOS teletype function
-    int 0x10             ; Print AL
-    jmp .print_loop      ; Continue loop
+    lodsb                 ; Load byte from DS:SI into AL and increment SI
+    test al, al           ; Check for null terminator
+    jz .done              ; If null byte is found, terminate
+    mov ah, 0x0E          ; BIOS teletype function to print character
+    int 0x10              ; Call BIOS interrupt to print AL
+    jmp .print_loop       ; Repeat for next character
+
 .done:
-    pop ax               ; Restore AX
-    pop si               ; Restore SI
-    ret
+    pop ax                ; Restore AX
+    pop si                ; Restore SI
+    ret                   ; Return from puts function
 
 ;-----------------------------------------
-; load_drivers: Load the screen & keyboard drivers
+; load_drivers: Load screen and keyboard drivers
 ;-----------------------------------------
 load_drivers:
-    mov ax, 0xA000          ; Screen driver memory location
-    mov es, ax              ; Set segment where data is read
-    mov bx, 0               ; Offset in segment
+    ; Load screen driver from disk
+    mov ax, 0xA000        ; Screen driver memory location
+    mov es, ax            ; Set ES to screen driver memory segment
+    mov bx, 0             ; Offset in segment
+    mov ah, 0x02          ; BIOS read sectors function
+    mov al, 1             ; Read one sector
+    mov ch, 0             ; Cylinder 0
+    mov cl, 3             ; Sector where screen driver is stored
+    mov dh, 0             ; Head 0
+    mov dl, [boot_drive]  ; Boot drive number from memory
+    int 0x13              ; BIOS interrupt to read sector into memory
 
-    mov ah, 0x02            ; BIOS read sectors function
-    mov al, 1               ; Read one sector
-    mov ch, 0               ; Cylinder 0
-    mov cl, 3               ; Sector where screen driver is stored
-    mov dh, 0               ; Head 0
-    mov dl, [boot_drive]    ; Drive number
-    int 0x13                ; Read driver into memory
+    ; Load keyboard driver from disk
+    mov ax, 0xB000        ; Keyboard driver memory location
+    mov es, ax            ; Set ES to keyboard driver memory segment
+    mov bx, 0             ; Offset in segment
+    mov al, 1             ; Read one sector
+    mov cl, 4             ; Sector where keyboard driver is stored
+    int 0x13              ; BIOS interrupt to read keyboard driver
 
-    mov ax, 0xB000          ; Keyboard driver memory location
-    mov es, ax
-    mov bx, 0
-
-    mov al, 1               ; Read one sector
-    mov cl, 4               ; Sector where keyboard driver is stored
-    int 0x13                ; Read keyboard driver
-
-    ret
+    ret                   ; Return from load_drivers
 
 ;-----------------------------------------
 ; call_driver: Call a driver function dynamically
 ;-----------------------------------------
 call_driver:
-    mov ax, [bx]  ; Load function pointer stored at address in BX
-    mov ds, ax    ; Set segment to driver memory
-    jmp word [bx] ; Jump to function dynamically
+    mov ax, [bx]          ; Load function pointer stored at address in BX
+    mov ds, ax            ; Set DS to the driver segment
+    jmp word [bx]         ; Jump to function address dynamically
 
 ;-----------------------------------------
 ; main: Kernel entry point
 ;-----------------------------------------
 main:
-    mov ax, 0x9000
+    mov ax, 0x9000        ; Set up segment registers
     mov ds, ax
     mov es, ax
-    mov dl, [0x9000]  ; Retrieve boot drive number
+    mov dl, [0x9000]      ; Retrieve boot drive number
 
-    mov ss, ax
-    mov sp, 0xFFF0
+    mov ss, ax            ; Set SS (stack segment) to AX
+    mov sp, 0xFFF0        ; Set stack pointer (SP) to high memory
 
     ; Print startup messages
     mov si, msg_blank
@@ -85,43 +87,39 @@ main:
     ; Load drivers
     call load_drivers
 
-    ; Setup function pointers
-    mov word [print_string_ptr], 0xA020     ; Pointer to print_string
-    mov word [get_line_ptr], 0xB020         ; Pointer to get_line
+    ; Set up function pointers for drivers
+    mov word [print_string_ptr], 0xA020    ; Pointer to print_string (screen driver)
+    mov word [get_line_ptr], 0xB020        ; Pointer to get_line (keyboard driver)
 
+    ; Inform the user that drivers have been loaded
     mov si, msg_kernelDriversLoaded
     call puts
-    
-    ; DRIVER TEST CASES
-    
 
-; Pause system
+    ; DRIVER TEST CASES: You can add tests for your screen and keyboard drivers here
+
+; Pause system (infinite loop)
 hang:
-    jmp hang             ; Loop forever
+    jmp hang             ; Loop forever, halt the system
 
 ;-----------------------------------------
 ; Data Section
 ;-----------------------------------------
-print_char_ptr: dw 0x0000
-get_key_ptr: dw 0x0000
+section .data
+
+print_string_ptr: dw 0xA020    ; Pointer for screen driver's print_string function
+get_line_ptr: dw 0xB020        ; Pointer for keyboard driver's get_line function
 
 msg_bootStart: db '[ok] Found bootloader for CentinalOS', ENDL, 0
 msg_kernelStarting: db '[ok] Kernel starting', ENDL, 0
 msg_kernelDriversLoaded: db '[ok] Drivers loaded', ENDL, 0
-
 msg_blank: db ' ', ENDL, 0
-
-print_string_ptr: dw 0x0000    ; Pointer for screen driver's print_string
-get_line_ptr: dw 0x0000        ; Pointer for keyboard driver's get_line
-
-; Global data for drivers
 test_string: db 'Testing screen and keyboard drivers!', ENDL, 0
 
 section .bss
-line_buffer resb 256      ; Reserve 256 bytes for user input
+line_buffer resb 256      ; Reserve 256 bytes for user input buffer
+boot_drive: resb 1        ; Reserve 1 byte for boot drive
 
-
-boot_drive: db 0
+section .text
 
 ; Pad kernel to exactly 512 bytes (a single sector)
-times 512 - ($ - $$) db 0
+times 512 - ($ - $$) db 0  ; Fill remaining space to ensure 512-byte size

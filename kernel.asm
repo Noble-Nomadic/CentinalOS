@@ -86,13 +86,13 @@ main:
     call load_drivers
 
     ; Setup function pointers
-    mov word [print_char_ptr], 0xA010   ; Address for screen driver function
-    mov word [print_string_ptr], 0xA020
-    mov word [get_key_ptr], 0xB010
-    mov word [get_line_ptr], 0xB020
+    mov word [print_string_ptr], 0xA020     ; Pointer to print_string
+    mov word [get_line_ptr], 0xB020         ; Pointer to get_line
 
     mov si, msg_kernelDriversLoaded
     call puts
+    
+    ; DRIVER TEST CASES
     
 
 ; Pause system
@@ -113,6 +113,13 @@ msg_blank: db ' ', ENDL, 0
 
 print_string_ptr: dw 0x0000    ; Pointer for screen driver's print_string
 get_line_ptr: dw 0x0000        ; Pointer for keyboard driver's get_line
+
+; Global data for drivers
+test_string: db 'Testing screen and keyboard drivers!', ENDL, 0
+
+section .bss
+line_buffer resb 256      ; Reserve 256 bytes for user input
+
 
 boot_drive: db 0
 

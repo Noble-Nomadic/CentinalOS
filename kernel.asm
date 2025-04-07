@@ -57,6 +57,13 @@ load_drivers:
 ;-----------------------------------------
 ; call_driver: Call a driver function dynamically
 ;-----------------------------------------
+
+; To use the driver API system, bx is set to the pointer
+; for the desired function. The call_driver function will
+; then execute the function pointed to
+; USE CASE
+; mov bx, 
+
 call_driver:
     mov ax, [bx]          ; Load function pointer stored at address in BX
     mov ds, ax            ; Set DS to the driver segment
@@ -106,17 +113,20 @@ hang:
 ;-----------------------------------------
 section .data
 
+; DRIVER FUNCTION POINTERS
 print_string_ptr: dw 0xA020    ; Pointer for screen driver's print_string function
 get_line_ptr: dw 0xB020        ; Pointer for keyboard driver's get_line function
 
-msg_bootStart: db '[ok] Found bootloader for CentinalOS', ENDL, 0
-msg_kernelStarting: db '[ok] Kernel starting', ENDL, 0
-msg_kernelDriversLoaded: db '[ok] Drivers loaded', ENDL, 0
-msg_blank: db ' ', ENDL, 0
-test_string: db 'Testing screen and keyboard drivers!', ENDL, 0
+; Debugging messages
+msg_bootStart: db '[ok] Found bootloader for CentinalOS', ENDL, 0   ; Demonstrates that CentinalOS was found
+msg_kernelStarting: db '[ok] Kernel starting', ENDL, 0              ; Prove that kernel was loaded
+msg_kernelDriversLoaded: db '[ok] Drivers loaded', ENDL, 0          ; Show that drives have been loaded
+msg_blank: db ' ', ENDL, 0                                          ; Blank message for new lines
+test_string: db '[ok] Drivers started', ENDL, 0                     ; Testing drivers
 
 section .bss
 line_buffer resb 256      ; Reserve 256 bytes for user input buffer
+
 boot_drive: resb 1        ; Reserve 1 byte for boot drive
 
 section .text

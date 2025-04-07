@@ -10,25 +10,25 @@ start:
     mov [boot_drive], dl
 
     ; Set destination for loading the kernel
-    mov ax, 0x9000          ; Segment for kernel
+    mov ax, 0x9000          ; Segment for kernel (updated to handle 1024 bytes)
     mov es, ax              ; ES now points to 0x9000
     mov bx, 0               ; Offset = 0
 
-    mov ss, ax           
-    mov sp, 0xFFF0     
+    mov ss, ax              ; Setup stack segment
+    mov sp, 0xFFF0          ; Setup stack pointer
 
-    ; Load kernel
+    ; Load the kernel (2 sectors for 1024 bytes)
     mov ah, 0x02
-    mov al, 1
+    mov al, 2               ; Load 2 sectors
     mov ch, 0
-    mov cl, 2
+    mov cl, 2               ; Kernel starts at sector 2
     mov dh, 0
     mov dl, [boot_drive]
     int 0x13
-    
-    mov [0x9000], dl  ; Store boot drive number at 0x9000
 
-    jmp 0x9000:0000
+    mov [0x9000], dl        ; Store boot drive number at 0x9000
+
+    jmp 0x9000:0000         ; Jump to the kernel
 
 hang:
     jmp hang

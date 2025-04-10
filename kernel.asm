@@ -152,6 +152,17 @@ get_input:
     pop ax
     ret
 
+
+;-----------------------------------------------------
+; DISK DRIVER
+;-----------------------------------------------------
+; 500 Sectors of the floppy disk are padded with 0s
+; and are reserved for files. Data can be directly
+; read and wrote by user commands. Instead of using
+; directories and filenames, each file is assigned an
+; ID of 0-499
+
+
 ;=====================================================
 ; USERSPACE
 ;=====================================================
@@ -281,12 +292,6 @@ CLI_Main:
     call cmp_str_shutdown
 
     jmp CLI_Main
-
-
-;=====================================================
-; DISK AND FILE MANAGER
-;=====================================================
-
 
 
 

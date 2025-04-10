@@ -251,6 +251,8 @@ cmp_str_shutdown:
     
     call cmd_run_shutdown   ; Call shutdown command
     
+.not_shutdown:
+    ret
 
 ; Shutdown the system using APM
 cmd_run_shutdown:
@@ -279,6 +281,13 @@ CLI_Main:
     call cmp_str_shutdown
 
     jmp CLI_Main
+
+
+;=====================================================
+; DISK AND FILE MANAGER
+;=====================================================
+
+
 
 
 ;=====================================================
@@ -325,9 +334,6 @@ main:
     ; Clear the screen (black)
     call clear_screen
 
-    ; Draw test pattern (more visible than a single pixel)
-    
-    ; Also set individual pixels in different colors
     mov al, 4         ; Color
     mov cx, 100       ; X-coordinate
     mov dx, 100       ; Y-coordinate

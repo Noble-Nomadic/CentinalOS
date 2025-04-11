@@ -209,13 +209,6 @@ read_sector:
     mov si, err_disk_op      ; Warn user that disk read failed
     call print_string
 
-    ; Print the error code for debugging
-    mov ah, 0x0E
-    mov al, '0' + ah / 16
-    int 0x10
-    mov al, '0' + ah % 16
-    int 0x10
-
     jmp hang                 ; Fatal error, hang system
 
 ; Write data to a selected sector
@@ -238,14 +231,6 @@ write_sector:
 .fail:
     mov si, err_disk_op
     call print_string
-
-
-    ; Print the error code for debugging
-    mov ah, 0x0E
-    mov al, '0' + ah / 16
-    int 0x10
-    mov al, '0' + ah % 16
-    int 0x10
 
     jmp hang
 

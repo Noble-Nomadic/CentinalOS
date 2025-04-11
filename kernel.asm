@@ -162,6 +162,79 @@ get_input:
 ; directories and filenames, each file is assigned an
 ; ID of 0-499
 
+; ID to CHS converter
+sectorID_to_CHS:
+    push ax                 ; Push used data to stack
+    push dx
+    push cx
+
+    mov cx, 18              ; Sectors per track
+    xor dx, dx
+    div cx                  ; AX / 18 -> AX = track, DX = sector offset 0-17
+
+    mov cl, dl              ; Sector number
+    inc cl
+
+    mov dx, 0
+    mov cx, 2
+    div cx                  ; AX / 2 -> AX = cylinder, DX = head
+
+    mov ch, al              ; Cylinder
+    mov dh, dl              ; Head
+
+    pop cx
+    pop dx
+    pop ax
+
+    ret
+
+; Read data in a file sector
+; AX = sector ID 0-499
+; ES:BX = buffer address
+read_sector:
+    call sectorID_to_CHS
+
+    mov ah, 0x02            ; Read
+    mov al, 1               ; Sectors to read
+    mov dl, 0x00            ; Floppy drive
+
+    int 0x13                ; Call BIOS interupt for disk
+
+    jc .fail                ; If failed, jump to error message
+
+    stc
+    ret
+
+.fail:
+    mov si, err_disk_op      ; Warn user that disk read failed
+    call print_string
+
+    jmp hang                 ; Fatal error, hang system
+
+; Write data to a selected sector
+; AX = secotr ID 0-499
+; ES:BX
+write_sector:
+    call sectorID_to_CHS
+
+    mov ah, 0x03             ; Write
+    mov al, 1                ; Sectors to write
+    mov dl, 0x00             ; Floppy dirve
+
+    int 0x13                 ; BIOS interupt for Disk operation
+
+    jc .fail
+
+    stc
+    ret
+
+.fail:
+    mov si, err_disk_op
+    call print_string
+
+    jmp hang
+
+
 
 ;=====================================================
 ; USERSPACE
@@ -225,6 +298,9 @@ cmd_run_help:
     mov si, msg_help_ld
     call print_string
 
+    ; Set the cmd_success flag to 1 to show success of command
+    mov byte [cmd_success], 1
+
     ret
 
 ;-----------------------------------------------------
@@ -247,6 +323,10 @@ cmp_str_clear:
 cmd_run_clear:
     mov ax, 0x0003
     int 0x10
+
+    ; Set the cmd_success flag to 1 to show success of command
+    mov byte [cmd_success], 1
+
     ret
 
 ;-----------------------------------------------------
@@ -261,18 +341,21 @@ cmp_str_shutdown:
     jnc .not_shutdown       ; Jump if not equal (carry flag not set)
     
     call cmd_run_shutdown   ; Call shutdown command
-    
+
 .not_shutdown:
     ret
 
 ; Shutdown the system using APM
 cmd_run_shutdown:
+
+    ; Set the cmd_success flag to 1 to show success of command
+    mov byte [cmd_success], 1
+
     ; Call BIOS interupt for shutdown
-    mov ax, 0x5307
-    int 0x15
+    ;mov ax, 0x5307
+    ;int 0x15
 
     ; If APM  didnt work, just hang the systen
-    hlt
     jmp hang
 
 ;-----------------------------------------------------
@@ -280,6 +363,10 @@ cmd_run_shutdown:
 ;-----------------------------------------------------
 ; Get user input, compare to commands
 CLI_Main:
+
+    ; Set the cmd_success flag to 0
+    mov byte [cmd_success], 0
+
     
     mov si, msg_ready
     call print_string
@@ -291,6 +378,14 @@ CLI_Main:
     call cmp_str_clear
     call cmp_str_shutdown
 
+    ; Check if a function was run
+    cmp byte [cmd_success], 0
+    jne .continue_CLI
+
+    mov si, fal_invalid_cmd
+    call print_string
+
+.continue_CLI:
     jmp CLI_Main
 
 
@@ -373,7 +468,7 @@ main:
     jmp hang
 
 .mode_error:
-    mov si, msg_mode_error
+    mov si, err_graphics_mode
     call print_string
     jmp hang
 
@@ -381,6 +476,9 @@ main:
 ; Hang system
 ;-----------------------------------------------------
 hang:
+    mov si, err_system_hang
+    call print_string
+
     hlt
     jmp hang
 
@@ -394,9 +492,8 @@ msg_continue: db '[input] Press enter to test keyboard and continue to graphics 
 msg_graphic_advice: db '[  *  ] Press any key to exit the graphics test', ENDL, 0               ; Grpahic test
 msg_init_complete: db '[ ok  ] System setup complete', ENDL, 0                                  ; Show system startup complete
 
-msg_mode_error: db '[FAIL ] Graphics mode 13h not set', ENDL, 0                                 ; Error message for graphic mode switch
-
 ; USERSPACE STRINGS
+; Commands
 ; Function name strings
 cmd_help: db 'help', 0
 cmd_clear: db 'clear', 0
@@ -405,11 +502,23 @@ cmd_shutdown: db 'shutdown', 0
 
 msg_ready: db '[READY]', ENDL, 0                                                                ; Use just before CLI input given (added missing comma)
 
-msg_help_la: db ENDL, 'Centinal OS commands:', ENDL, 0                                                ; Messages for the help command
+msg_help_la: db ENDL, 'Centinal OS commands:', ENDL, 0                                          ; Messages for the help command
 msg_help_lb: db 'help      - Display this', ENDL, 0
 msg_help_lc: db 'clear     - Clear screen', ENDL, 0
 msg_help_ld: db 'shutdown  - Shutdown system', ENDL, 0
 
-input_buffer: times 100 db 0
+
+; ERROR MESSAGES
+; Fails: small errors or issues with operations
+fal_invalid_cmd: db ENDL, '[FAIL ] Invalid command', ENDL, 0
+
+; Fatal errors: occurs when system enters a hang
+err_disk_op: db ENDL, '[FATAL] Disk operation failed', ENDL, 0
+err_system_hang: db ENDL, '[FATAL] ENTERING SYSTEM HANG', 0
+err_graphics_mode: db '[FATAL] Graphics mode 13h not set', ENDL, 0                              ; Error message for graphic mode switch
+
+; Main variables
+input_buffer: times 100 db 0                                                                    ; Input buffer for getting user input
+cmd_success: db 0                                                                               ; Check if a command was executed in the CLI
 
 times 4096 - ($ - $$) db 0

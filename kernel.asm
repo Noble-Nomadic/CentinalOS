@@ -162,6 +162,43 @@ get_input:
 ; directories and filenames, each file is assigned an
 ; ID of 0-499
 
+;-----------------------------------------------------
+; Print buffer content (Only printable ASCII characters)
+;-----------------------------------------------------
+print_buffer:
+    ; Print each byte in the buffer
+    mov cx, 512              ; We want to print 512 bytes (size of a sector)
+    lea si, [buffer]         ; Load address of the buffer into SI
+
+.print_next_byte:
+    mov al, [si]             ; Load current byte from buffer into AL
+    cmp al, 0                ; If the byte is zero, stop (null-terminated string check)
+    je .done
+    cmp al, 32               ; Check if the byte is a printable ASCII character (space = 32)
+    jl .skip_print           ; If less than 32, it's not printable, skip it
+    cmp al, 126              ; Check if the byte is within the printable ASCII range (tilde = 126)
+    jg .skip_print           ; If greater than 126, skip it
+    call print_char          ; Print the character (call print_char function)
+
+.skip_print:
+    inc si                   ; Move to the next byte
+    loop .print_next_byte    ; Loop for 512 bytes (sector size)
+
+.done:
+    ret
+
+;-----------------------------------------------------
+; Print character function (used by print_buffer)
+;-----------------------------------------------------
+print_char:
+    mov ah, 0x0E             ; Teletype output function
+    mov bh, 0                ; Page number
+    mov bl, 0x07             ; Text attribute (light gray on black)
+    int 0x10                 ; Call BIOS interrupt to print the character
+    ret
+
+
+
 ; ID to CHS converter
 sectorID_to_CHS:
     push ax                 ; Push used data to stack
@@ -188,51 +225,49 @@ sectorID_to_CHS:
 
     ret
 
-; Read data in a file sector
-; AX = sector ID 0-499
-; ES:BX = buffer address
+;-----------------------------------------------------
+; Read a sector from the disk (e.g., first sector)
+;-----------------------------------------------------
 read_sector:
-    call sectorID_to_CHS
+    mov ah, 0x02          ; Read sector function
+    mov al, 0x01          ; Number of sectors to read (1 sector)
+    mov ch, 0x00          ; Cylinder 0
+    mov cl, 0x01          ; Sector 1
+    mov dh, 0x00          ; Head 0
+    mov dl, 0x80          ; Drive 0 (floppy)
+    lea bx, [buffer]      ; Buffer to store the data
+    int 0x13              ; Call BIOS disk interrupt
 
-    mov ah, 0x02            ; Read
-    mov al, 1               ; Sectors to read
-    mov dl, 0x00            ; Floppy drive
-
-    int 0x13                ; Call BIOS interupt for disk
-
-    jc .fail                ; If failed, jump to error message
-
-    stc
+    jc  .disk_error       ; If carry flag is set, read failed
     ret
 
-.fail:
-    mov si, err_disk_op      ; Warn user that disk read failed
-    call print_string
-
-    jmp hang                 ; Fatal error, hang system
-
-; Write data to a selected sector
-; AX = secotr ID 0-499
-; ES:BX
-write_sector:
-    call sectorID_to_CHS
-
-    mov ah, 0x03             ; Write
-    mov al, 1                ; Sectors to write
-    mov dl, 0x00             ; Floppy dirve
-
-    int 0x13                 ; BIOS interupt for Disk operation
-
-    jc .fail
-
-    stc
-    ret
-
-.fail:
+.disk_error:
     mov si, err_disk_op
     call print_string
-
     jmp hang
+
+
+;-----------------------------------------------------
+; Write a sector to the disk
+;-----------------------------------------------------
+write_sector:
+    mov ah, 0x03          ; Write sector function
+    mov al, 0x01          ; Number of sectors to write (1 sector)
+    mov ch, 0x00          ; Cylinder 0
+    mov cl, 0x01          ; Sector 1
+    mov dh, 0x00          ; Head 0
+    mov dl, 0x80          ; Drive 0 (floppy)
+    lea bx, [buffer]      ; Buffer containing data to write
+    int 0x13              ; Call BIOS disk interrupt
+
+    jc  .disk_error       ; If carry flag is set, write failed
+    ret
+
+.disk_error:
+    mov si, err_disk_op
+    call print_string
+    jmp hang
+
 
 
 
@@ -390,21 +425,23 @@ CLI_Main:
 
 
 
+
 ;=====================================================
 ; KERNEL MAIN
 ;=====================================================
 main:
     ; Setup data segments and stack
-    mov ax, cs
-    mov ds, ax
-    mov es, ax
-    mov ss, ax
-    mov sp, 0xFFF0
+    push cs           ; Save current segment
+    pop ds            ; DS = CS
+    push cs           ; Save current segment
+    pop es            ; ES = CS
+    mov ss, ax        ; Set SS to the same as DS
+    mov sp, 0xFFF0    ; Set stack pointer
 
     ; Main startup messages
     mov si, msg_blank
     call print_string
-    
+
     mov si, msg_bootloader
     call print_string
     call delay
@@ -434,17 +471,18 @@ main:
     ; Clear the screen (black)
     call clear_screen
 
-    mov al, 4         ; Color
-    mov cx, 100       ; X-coordinate
-    mov dx, 100       ; Y-coordinate
-    call set_pixel
-    
-    mov al, 2         ; Color
-    mov cx, 102       ; X-coordinate
-    mov dx, 100       ; Y-coordinate
+    ; Draw some test pixels
+    mov al, 4         ; Color red
+    mov cx, 100       ; X
+    mov dx, 100       ; Y
     call set_pixel
 
-    mov al, 1
+    mov al, 2         ; Color green
+    mov cx, 102
+    mov dx, 100
+    call set_pixel
+
+    mov al, 1         ; Color blue
     mov cx, 104
     mov dx, 100
     call set_pixel
@@ -458,13 +496,12 @@ main:
     mov al, 0x03
     int 0x10
 
-    ; Test disk read/write functionality
-    call run_disk_rw_test
-
     mov si, msg_init_complete
     call print_string
 
+    ; Start CLI
     call CLI_Main
+
     jmp hang
 
 .mode_error:
@@ -472,51 +509,6 @@ main:
     call print_string
     jmp hang
 
-;-----------------------------------------------------
-; Disk Read/Write Test
-;-----------------------------------------------------
-run_disk_rw_test:
-    ; Set up source test string
-    mov si, test_data
-    mov di, disk_buffer
-.copy_test_string:
-    lodsb
-    mov [di], al
-    inc di
-    test al, al
-    jnz .copy_test_string
-
-    ; Write it to sector 42
-    mov ax, 42
-    mov bx, disk_buffer
-    mov ax, cs
-    mov es, ax
-
-    call write_sector
-
-    ; Clear the buffer to verify the read
-    mov di, disk_buffer
-    mov cx, 512
-    xor al, al
-    rep stosb
-
-    ; Read sector 42 back into the buffer
-    mov ax, 42
-    mov bx, disk_buffer
-    mov ax, cs
-    mov es, ax
-
-    call read_sector
-
-    ; Print it back
-    mov si, disk_buffer
-    call print_string
-
-    ret
-
-;-----------------------------------------------------
-; Hang system
-;-----------------------------------------------------
 hang:
     mov si, err_system_hang
     call print_string
@@ -524,39 +516,50 @@ hang:
     hlt
     jmp hang
 
+
+
+
 ;-----------------------------------------------------
 ; Strings & Data Section
 ;-----------------------------------------------------
-msg_blank: db ' ', ENDL, 0
-msg_bootloader: db '[ ok  ] Ignis Bootloader found', ENDL, 0
-msg_kernel_found: db '[ ok  ] Kernel loaded', ENDL, 0
-msg_continue: db '[input] Press enter to test keyboard and continue to graphics test', ENDL, 0
-msg_graphic_advice: db '[  *  ] Press any key to exit the graphics test', ENDL, 0
-msg_init_complete: db '[ ok  ] System setup complete', ENDL, 0
+msg_blank: db ' ', ENDL, 0                                                                      ; Blank message for new lines
+msg_bootloader: db '[ ok  ] Ignis Bootloader found', ENDL, 0                                    ; Bootloader found message
+msg_kernel_found: db '[ ok  ] Kernel loaded', ENDL, 0                                           ; Proof kernel loaded
+msg_continue: db '[input] Press enter to test keyboard and continue to graphics test', ENDL, 0  ; Graphic test
+msg_graphic_advice: db '[  *  ] Press any key to exit the graphics test', ENDL, 0               ; Grpahic test
+msg_init_complete: db '[ ok  ] System setup complete', ENDL, 0                                  ; Show system startup complete
+msg_disk_read: db  '[ ok  ] Disk sector read: ', ENDL, 0                                         ; Disk read result message
+msg_disk_write: db ENDL, '[ ok  ] Disk sector written', ENDL, 0                                       ; Disk write confirmation
 
 ; USERSPACE STRINGS
+; Commands
+; Function name strings
 cmd_help: db 'help', 0
 cmd_clear: db 'clear', 0
 cmd_shutdown: db 'shutdown', 0
 
-msg_ready: db '[READY]', ENDL, 0
-msg_help_la: db ENDL, 'Centinal OS commands:', ENDL, 0
+
+
+msg_ready: db '[READY]', ENDL, 0                                                                ; Use just before CLI input given (added missing comma)
+
+msg_help_la: db ENDL, 'Centinal OS commands:', ENDL, 0                                          ; Messages for the help command
 msg_help_lb: db 'help      - Display this', ENDL, 0
 msg_help_lc: db 'clear     - Clear screen', ENDL, 0
 msg_help_ld: db 'shutdown  - Shutdown system', ENDL, 0
 
+
 ; ERROR MESSAGES
+; Fails: small errors or issues with operations
 fal_invalid_cmd: db ENDL, '[FAIL ] Invalid command', ENDL, 0
+
+; Fatal errors: occurs when system enters a hang
 err_disk_op: db ENDL, '[FATAL] Disk operation failed', ENDL, 0
 err_system_hang: db ENDL, '[FATAL] ENTERING SYSTEM HANG', 0
-err_graphics_mode: db '[FATAL] Graphics mode 13h not set', ENDL, 0
+err_graphics_mode: db '[FATAL] Graphics mode 13h not set', ENDL, 0                              ; Error message for graphic mode switch
 
 ; Main variables
-input_buffer: times 100 db 0
-cmd_success: db 0
-
-; Disk I/O buffers and test data
-disk_buffer: times 512 db 0
-test_data: db '[TEST] Disk I/O successful!', ENDL, 0
+input_buffer: times 100 db 0                                                                    ; Input buffer for getting user input
+cmd_success: db 0                                                                               ; Check if a command was executed in the CLI
+buffer: times 512 db 0                                                                          ; Define a buffer to hold one sector (512 bytes)
 
 times 4096 - ($ - $$) db 0

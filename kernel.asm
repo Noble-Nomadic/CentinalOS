@@ -458,19 +458,61 @@ main:
     mov al, 0x03
     int 0x10
 
+    ; Test disk read/write functionality
+    call run_disk_rw_test
+
     mov si, msg_init_complete
     call print_string
 
-
     call CLI_Main
-
-
     jmp hang
 
 .mode_error:
     mov si, err_graphics_mode
     call print_string
     jmp hang
+
+;-----------------------------------------------------
+; Disk Read/Write Test
+;-----------------------------------------------------
+run_disk_rw_test:
+    ; Set up source test string
+    mov si, test_data
+    mov di, disk_buffer
+.copy_test_string:
+    lodsb
+    mov [di], al
+    inc di
+    test al, al
+    jnz .copy_test_string
+
+    ; Write it to sector 42
+    mov ax, 42
+    mov bx, disk_buffer
+    mov ax, cs
+    mov es, ax
+
+    call write_sector
+
+    ; Clear the buffer to verify the read
+    mov di, disk_buffer
+    mov cx, 512
+    xor al, al
+    rep stosb
+
+    ; Read sector 42 back into the buffer
+    mov ax, 42
+    mov bx, disk_buffer
+    mov ax, cs
+    mov es, ax
+
+    call read_sector
+
+    ; Print it back
+    mov si, disk_buffer
+    call print_string
+
+    ret
 
 ;-----------------------------------------------------
 ; Hang system
@@ -485,40 +527,36 @@ hang:
 ;-----------------------------------------------------
 ; Strings & Data Section
 ;-----------------------------------------------------
-msg_blank: db ' ', ENDL, 0                                                                      ; Blank message for new lines
-msg_bootloader: db '[ ok  ] Ignis Bootloader found', ENDL, 0                                    ; Bootloader found message
-msg_kernel_found: db '[ ok  ] Kernel loaded', ENDL, 0                                           ; Proof kernel loaded
-msg_continue: db '[input] Press enter to test keyboard and continue to graphics test', ENDL, 0  ; Graphic test
-msg_graphic_advice: db '[  *  ] Press any key to exit the graphics test', ENDL, 0               ; Grpahic test
-msg_init_complete: db '[ ok  ] System setup complete', ENDL, 0                                  ; Show system startup complete
+msg_blank: db ' ', ENDL, 0
+msg_bootloader: db '[ ok  ] Ignis Bootloader found', ENDL, 0
+msg_kernel_found: db '[ ok  ] Kernel loaded', ENDL, 0
+msg_continue: db '[input] Press enter to test keyboard and continue to graphics test', ENDL, 0
+msg_graphic_advice: db '[  *  ] Press any key to exit the graphics test', ENDL, 0
+msg_init_complete: db '[ ok  ] System setup complete', ENDL, 0
 
 ; USERSPACE STRINGS
-; Commands
-; Function name strings
 cmd_help: db 'help', 0
 cmd_clear: db 'clear', 0
 cmd_shutdown: db 'shutdown', 0
 
-
-msg_ready: db '[READY]', ENDL, 0                                                                ; Use just before CLI input given (added missing comma)
-
-msg_help_la: db ENDL, 'Centinal OS commands:', ENDL, 0                                          ; Messages for the help command
+msg_ready: db '[READY]', ENDL, 0
+msg_help_la: db ENDL, 'Centinal OS commands:', ENDL, 0
 msg_help_lb: db 'help      - Display this', ENDL, 0
 msg_help_lc: db 'clear     - Clear screen', ENDL, 0
 msg_help_ld: db 'shutdown  - Shutdown system', ENDL, 0
 
-
 ; ERROR MESSAGES
-; Fails: small errors or issues with operations
 fal_invalid_cmd: db ENDL, '[FAIL ] Invalid command', ENDL, 0
-
-; Fatal errors: occurs when system enters a hang
 err_disk_op: db ENDL, '[FATAL] Disk operation failed', ENDL, 0
 err_system_hang: db ENDL, '[FATAL] ENTERING SYSTEM HANG', 0
-err_graphics_mode: db '[FATAL] Graphics mode 13h not set', ENDL, 0                              ; Error message for graphic mode switch
+err_graphics_mode: db '[FATAL] Graphics mode 13h not set', ENDL, 0
 
 ; Main variables
-input_buffer: times 100 db 0                                                                    ; Input buffer for getting user input
-cmd_success: db 0                                                                               ; Check if a command was executed in the CLI
+input_buffer: times 100 db 0
+cmd_success: db 0
+
+; Disk I/O buffers and test data
+disk_buffer: times 512 db 0
+test_data: db '[TEST] Disk I/O successful!', ENDL, 0
 
 times 4096 - ($ - $$) db 0

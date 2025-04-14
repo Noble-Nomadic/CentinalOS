@@ -1,38 +1,23 @@
-[org 0x7C00]
+[org 0x7c00]   ; The bootloader's code starts at 0x7C00
+bits 16
+
+; Bootloader entry point
+jmp start
+
 start:
-    cli                 ; Clear interrupts
-    cld                 ; Clear direction flag
-    
-    mov ax, 0x07C0      ; Set up data segment
-    mov ds, ax
-    
-    mov [boot_drive], dl ; Save boot drive
-    
-    ; Set up stack
-    mov ax, 0x9000
-    mov ss, ax
-    mov sp, 0xFFF0
-    
-    ; Load kernel - read 8 sectors starting from sector 2 into memory at ES:BX (0x9000:0)
-    mov ax, 0x9000
-    mov es, ax
-    mov bx, 0           ; Destination offset
-    
-    mov ah, 0x02        ; BIOS read function
-    mov al, 8           ; Read 8 sectors
-    mov ch, 0           ; Cylinder 0
-    mov cl, 2           ; Start from sector 2
-    mov dh, 0           ; Head 0
-    mov dl, [boot_drive] ; Drive number
-    int 0x13            ; Call BIOS
-    
-    ; Pass boot drive to kernel
-    mov dl, [boot_drive]
-    
-    ; Jump to kernel
-    jmp 0x9000:0000
+    ; Set up registers for reading the kernel from disk
+    mov ah, 0x02      ; BIOS read sectors function
+    mov al, 0x01      ; Number of sectors to read (1 sector)
+    mov ch, 0         ; Cylinder 0
+    mov dh, 0         ; Head 0
+    mov dl, 0x80      ; Drive 0 (Floppy)
+    mov bx, 0x8000    ; Destination memory address (0x8000 is a safe address)
 
-boot_drive: db 0
+    ; Read the kernel (sector 1) into memory at 0x8000
+    int 0x13          ; BIOS interrupt for disk I/O
+    
+    ; After loading the kernel, jump to it
+    jmp 0x8000        ; Jump to the kernel's entry point
 
-times 510 - ($ - $$) db 0
-dw 0xAA55
+times 510-($-$$) db 0  ; Fill the rest with 0s
+dw 0xAA55              ; Bootloader signature (required for BIOS to recognize it)

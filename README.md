@@ -1,2 +1,2 @@
 # CentinalOS
-A simple command line operating system written in x86 assembly.
+A simple command line operating system written in x86 assembly and C.
